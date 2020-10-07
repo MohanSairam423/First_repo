@@ -6,9 +6,9 @@ def packageName = "spboot-package_${env.BUILD_NUMBER}"
 def version = "${env.BUILD_NUMBER}.0"
 pipeline {
   agent any
-  tools {
-       maven 'Maven'
-   }
+  //tools {
+    //   maven 'Maven'
+   //}
   stages {
        stage('Build') {
            steps {
