@@ -1,9 +1,6 @@
-def artifactname = "sp-boot-app.jar"
+def artifactname = "sp-boot-app"
 def repoName = "sp-boot-app-repo"
-def pipelineName = "devops_vk_pipeline"
-def semanticVersion = "${env.BUILD_NUMBER}.0.0"
-def packageName = "spboot-package_${env.BUILD_NUMBER}"
-def version = "${env.BUILD_NUMBER}.0"
+def pkgName = "sp-boot-package"
 pipeline {
   agent any
   //tools {
@@ -14,6 +11,7 @@ pipeline {
            steps {
               snDevOpsStep()
               sh 'mvn -B -DskipTests clean compile'
+              snDevOpsArtifact(artifactsPayload: """{"artifacts": [{"name": "${artifactname}", "version": "1.${env.BUILD_NUMBER}","semanticVersion": "1.${env.BUILD_NUMBER}.0","repositoryName": "${repoName}"}],"branchName":"master"}""")
            }
        }
        stage('Test') {
@@ -27,14 +25,15 @@ pipeline {
              }
            }
        }
-      stage('Deploy') {
+      stage('PublishPackage') {
                  steps {
                     snDevOpsStep()
                     echo 'Deploying....'
+                    snDevOpsPackage(name: "${pkgName}-${env.BUILD_NUMBER}", artifactsPayload: """{"artifacts":[{"name": "${artifactname}", "version": "1.${env.BUILD_NUMBER}", "repositoryName": "${repoName}"}], "branchName":"master"}""")
                  }
       }
 
-     stage('PublishPackage') {
+     stage('Change-Registration') {
          steps {
             snDevOpsStep()
             snDevOpsChange()
@@ -50,5 +49,11 @@ pipeline {
          	
          }
      }
+     
+     stage('Change-Acceleration') {
+           steps {
+              snDevOpsChange()
+           }
+       }
  }
 }
