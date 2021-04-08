@@ -1,60 +1,209 @@
-def artifactname = "sp-boot-app"
-def repoName = "sp-boot-app-repo"
-def pkgName = "sp-boot-package"
+
 pipeline {
-  agent any
-  //tools {
-    //   maven 'Maven'
-   //}
-  stages {
-       stage('Build') {
-           steps {
-              snDevOpsStep()
-              snDevOpsChange()
-              sh 'mvn -B -DskipTests clean compile'
-              snDevOpsArtifact(artifactsPayload: """{"artifacts": [{"name": "${artifactname}", "version": "1.${env.BUILD_NUMBER}","semanticVersion": "1.${env.BUILD_NUMBER}.0","repositoryName": "${repoName}"}],"branchName":"master"}""")
-           }
-       }
-       stage('Test') {
-           steps {
-              snDevOpsStep()
-               sh 'mvn test'
-           }
-           post {
-                    always {
-                junit "**/target/surefire-reports/*.xml"
-             }
-           }
-       }
-      stage('PublishPackage') {
-                 steps {
-                    snDevOpsStep()
-                    echo 'Deploying....'
-                    snDevOpsPackage(name: "${pkgName}-${env.BUILD_NUMBER}", artifactsPayload: """{"artifacts":[{"name": "${artifactname}", "version": "1.${env.BUILD_NUMBER}", "repositoryName": "${repoName}"}], "branchName":"master"}""")
-                 }
-      }
+    
+    agent any
 
-     stage('Change-Registration') {
-         steps {
-            snDevOpsStep()
-            snDevOpsChange()
-            echo 'Publishing Package....'
-            // format-1
-            // snDevOpsPackage(name: "newPackage", artifactsPayload: """{"artifacts": [{"name": "first_repo.jar","repositoryName": "first_repo","version": "${version}"},{"name": "sa-frontend.jar","repositoryName": "services-1031","version": "9.2"}],"branchName":"master"}""")
-            //format-2
-            //snDevOpsPackage(name: "newPackage", artifactsPayload: """{"artifacts": [{"name": "sa-web.jar","repositoryName": "services-1031","currentBuildInfo" : "true"},{"name": "sa-frontend.jar","repositoryName": "services-1031","currentBuildInfo" : "true"}],"branchName":"master"}""")
-         
-         	// format -3
-         	//snDevOpsPackage(name: "balu-package", artifactsPayload: """{"artifacts": [{"name": "First_repo.jar","repositoryName": "First_repo","version":${version}}],"pipelineName": "balu_pipeline","taskExecutionNumber":"30","stageName":"PublishPackage","branchName": "master"}""")
+    stages {
+        stage('Build with Tests, Running Sonar') {
+            steps {
+                echo "Build"
+            }
+        }
 
-         	
-         }
-     }
-     
-     stage('Change-Acceleration') {
-           steps {
-              snDevOpsChange()
-           }
-       }
- }
+        stage('Publish artifact to ServiceNow') {
+            when {
+                branch 'release-*'
+            }
+            steps {
+                script {
+                    uploadArtifactToServiceNow()
+                }
+            }
+        } //Publish artifact to ServiceNow
+
+        stage('Publish Pact, OCP Init') {
+            steps {
+                echo "Publish Pact, OCP Init"
+            }
+        }
+
+        stage('Build, Deploy, and Checkmarx') {
+            parallel {
+                stage('A2CR App Build and Deploy') {
+                    steps {
+                        echo "A2CR App Build and Deploy"
+                    }
+                }
+
+                stage('A2CO Stub Server Build and Deploy') {
+                    steps {
+                        echo "A2CO Stub Server Build and Deploy"
+                    }
+                }
+
+                stage('Checkmarx') {
+                    steps {
+                        echo "Checkmarx"
+                    }
+                }
+
+                stage('Functional Test') {
+                    steps {
+                        functionalTest()
+                    }
+                    post {
+                      always {
+                        junit '**/target/surefire-reports/*.xml' 
+                    }
+                }
+            }
+        }
+
+        stage('Service Now reports uploads') {
+            parallel {
+                stage('Checkmarx Report Upload to ServiceNow'){
+                    when {
+                        branch 'release-*'
+                    }
+                    steps {
+                        echo "Uploading Checkmarx report"
+                    }
+                }
+
+                stage('SonarQube Report Upload to ServiceNow'){
+                    when {
+                        branch 'release-*'
+                    }
+                    steps {
+                        sonarTest()
+                    }
+                }
+            }
+        }
+
+        stage('Final Tests') {
+            parallel {
+                stage('Component Test') {
+                    steps {
+                        echo "Component Test"
+                    }
+                }
+
+                stage('Pact Verification') {
+                    steps {
+                        echo "Contract Test"
+                    }
+                }
+
+                stage('Performance Test') {
+                    steps {
+                        echo "Perf Test"
+                    }  // end steps for Performance Test
+                }  // end Performance Test
+            }  // end Parallel
+        }  // stage('Final Tests')
+
+        stage('Deployment to production'){
+            when {
+                branch 'release-*'
+            }
+            steps {
+                createServiceNowChangeRequest()
+            }
+        } //Deployment to production
+
+        stage('Nexus Deploy') {
+            steps {
+                echo "Deploy to Nexus"
+            }
+        }
+
+        stage('Increment version') {
+            when {
+                branch 'release-*'
+            }
+            steps {
+                script {
+                    echo "Version Increment"
+                }
+            }
+        }
+        stage('Push changes to GIT') {
+            when {
+                branch 'release-*'
+            }
+            steps {
+                script {
+                    echo "Push Changes to Git"
+                }
+            }
+        }
+    }  // end stages in Maven Agent
+    post {
+        success {
+            echo "Success"
+        }
+        failure {
+            echo "Failue"
+        }
+        aborted {
+            echo "Error"
+        }
+        always {
+            echo "Send Report"
+        }
+    }  // end post
+}  // end Pipeline
+
+
+def sonarTest() {
+
+    try {
+        withSonarQubeEnv('LocalSonar') {
+	        sh '/Applications/SonarScanner/bin/sonar-scanner -Dproject.settings=/Applications/sonar-scanner.properties'
+			//sh 'env'
+        }
+    } finally {
+        //junit '**/target/surefire-reports/TEST-*.xml'
+	echo "Test"
+    }
+}
+
+def functionalTest() {
+    echo "Functional Test"
+    sh 'mvn test'   
+    junit '**/target/surefire-reports/*.xml' 
+    //try {
+        //withCredentials([string(credentialsId: 'A2CR_UNIQUE', variable: 'token')]) {
+          //  mvnRun("test -DskipTestsUnit -DskipTestsComponent -Da2cr.lowell.unique='${token}' -Dspring.profiles.active=dev")
+        //}
+    //} finally {
+      //  junit '**/target/surefire-reports/TEST-*.xml'
+    //}
+
+
+}
+
+def uploadArtifactToServiceNow() {
+    def pomVersion = "${env.BUILD_NUMBER}"
+    def applicationJar = "a2cr-app-${env.BUILD_NUMBER}-exec.jar";
+    def groupIdPath = "A2CR_GROUP";
+    def repoPath = groupIdPath + "/a2cr-app";
+    def packageName = "a2crpackage";
+
+    echo "begin ---snDevOpsArtifact-----"
+    snDevOpsArtifact(artifactsPayload: """{"artifacts": [{"name": "${applicationJar}", "version": "${pomVersion}","semanticVersion": "${pomVersion}","repositoryName": "${repoPath}"}], "branchName": "${env.BRANCH_NAME}"}""")
+    echo "end ---snDevOpsArtifact-----"
+
+    echo "begin ---snDevOpsPackage-----"
+    snDevOpsPackage(name: "${packageName}", artifactsPayload: """{"artifacts": [{"name": "${applicationJar}", "version": "${pomVersion}","semanticVersion": "${pomVersion}","repositoryName": "${repoPath}"}], "branchName": "${env.BRANCH_NAME}"}""")
+    echo "end ---snDevOpsPackage-----"
+}
+
+
+
+def createServiceNowChangeRequest() {
+    echo "begin ---snDevOpsChange-----"
+    snDevOpsChange()
+    echo "end ---snDevOpsChange-----"
 }
