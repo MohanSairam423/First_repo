@@ -186,7 +186,7 @@ def functionalTest() {
 }
 
 def uploadArtifactToServiceNow() {
-    def pomVersion = "${env.BUILD_NUMBER}"
+    def pomVersion = "${env.BUILD_NUMBER}.0.0"
     def applicationJar = "a2cr-app-${env.BUILD_NUMBER}-exec.jar";
     def groupIdPath = "A2CR_GROUP";
     def repoPath = groupIdPath + "/a2cr-app";
