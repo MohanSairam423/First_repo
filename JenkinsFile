@@ -160,11 +160,10 @@ pipeline {
 def sonarTest() {
 
     try {
-        //withSonarQubeEnv('LocalSonar') {
-	  //      sh '/Applications/SonarScanner/bin/sonar-scanner -Dproject.settings=/Applications/sonar-scanner.properties'
+        withSonarQubeEnv('LocalSonar') {
+	        sh '/Applications/SonarScanner/bin/sonar-scanner -Dproject.settings=/Applications/sonar-scanner.properties'
 			//sh 'env'
-        //}
-	echo "Test"
+        }
     } finally {
         //junit '**/target/surefire-reports/TEST-*.xml'
 	echo "Test"
